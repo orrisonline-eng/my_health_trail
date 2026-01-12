@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:csv/csv.dart';
@@ -8,8 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-
 import 'pro_limits.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+
+// ================== IAP / PRO CONSTANTS ==================
+const String kProMonthlyProductId = 'pro_monthly';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -94,14 +97,24 @@ class _MyHomePageState extends State<MyHomePage> {
   final _profileController = TextEditingController();
   final _nhsController = TextEditingController();
 
+  // ================= IAP (In-App Purchase) =================
+  final InAppPurchase _iap = InAppPurchase.instance;
+  StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
+
+  bool _iapAvailable = false;
+  ProductDetails? _proMonthlyProduct;
+  String? _iapError;
+
   @override
   void initState() {
     super.initState();
     _initData();
+    _initIAP();
   }
 
   @override
   void dispose() {
+    _purchaseSub?.cancel(); 
     _profileController.dispose();
     _nhsController.dispose();
     super.dispose();
@@ -110,6 +123,58 @@ class _MyHomePageState extends State<MyHomePage> {
   Future<void> _initData() async {
     await _loadProfileData();
     await _loadEntries();
+  }
+
+  Future<void> _initIAP() async {
+    try {
+      _iapAvailable = await _iap.isAvailable();
+      if (!_iapAvailable) return;
+
+      // ================= IAP INITIALISATION =================
+      // Listen to purchase updates
+
+      _purchaseSub = _iap.purchaseStream.listen(
+        _onPurchaseUpdated,
+        onError: (error) {
+          if (mounted) {
+            setState(() => _iapError = error.toString());
+          }
+        },
+      );
+
+      // Query products
+      final response = await _iap.queryProductDetails(
+        {kProMonthlyProductId},
+      );
+
+      if (response.error != null) {
+        if (mounted) {
+          setState(() => _iapError = response.error!.message);
+        }
+        return;
+      }
+
+      if (response.productDetails.isNotEmpty) {
+        setState(() {
+          _proMonthlyProduct = response.productDetails.first;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _iapError = e.toString());
+    }
+  }
+
+  void _onPurchaseUpdated(List<PurchaseDetails> purchases) async {
+    for (final purchase in purchases) {
+      if (purchase.status == PurchaseStatus.purchased ||
+          purchase.status == PurchaseStatus.restored) {
+        await ProLimits.setPro(true);
+
+        if (purchase.pendingCompletePurchase) {
+          await _iap.completePurchase(purchase);
+        }
+      }
+    }
   }
 
   Rect _shareOrigin() {
@@ -164,21 +229,35 @@ class _MyHomePageState extends State<MyHomePage> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Not now'),
+            
           ),
+          TextButton(
+  onPressed: () async {
+    Navigator.pop(context);
+    await _iap.restorePurchases();
+  },
+  child: const Text('Restore'),
+),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Upgrade'),
-          ),
+  onPressed: () async {
+    Navigator.pop(context);
+    if (_proMonthlyProduct != null) {
+      await _iap.buyNonConsumable(
+        purchaseParam: PurchaseParam(productDetails: _proMonthlyProduct!),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Store not available')),
+      );
+    }
+  },
+  child: const Text('Buy Pro'),
+),
         ],
       ),
     );
   }
 
-  void _showValidationError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.red),
-    );
-  }
 
   // ─────────────────────────  ADD ENTRY  ─────────────────────────
   Future<void> _addEntry() async {

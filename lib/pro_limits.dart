@@ -1,10 +1,8 @@
 // --------------------  pro_limits.dart  --------------------
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 
 class ProLimits {
-  static const bool devMode = true;
+  static const bool devMode = false;
   static const _entryCountKey = 'pro_entry_count';
   static const _entryMonthKey = 'pro_entry_month';
   static const _pdfCountKey = 'pro_pdf_count';
@@ -65,7 +63,7 @@ class ProLimits {
 
   // Check if user can export PDF
   static Future<bool> canExportPdf() async {
-    if (devMode) return true;
+    if (devMode) return false;
     if (await isPro()) return true;
   
     final prefs = await SharedPreferences.getInstance();
