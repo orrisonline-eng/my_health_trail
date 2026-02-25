@@ -1,3 +1,16 @@
+/*
+  MyHealthTrail
+  --------------
+  Entry point for the MyHealthTrail application.
+
+  Purpose:
+  - App bootstrap and global configuration
+  - Initialises Flutter bindings
+  - Sets up In-App Purchases (Pro features)
+  - Launches the main application widget
+  Project: MyHealthTrail
+*/
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -10,9 +23,12 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'pro_limits.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
+import 'widgets/legal_links.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'app_links.dart';
 
 // ================== IAP / PRO CONSTANTS ==================
-const String kProMonthlyProductId = 'pro_monthly';
+const String kProMonthlyProductId = 'myhealthtrail_pro_monthly';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -103,18 +119,34 @@ class _MyHomePageState extends State<MyHomePage> {
 
   bool _iapAvailable = false;
   ProductDetails? _proMonthlyProduct;
+  // ignore: unused_field
   String? _iapError;
+
+  Future<void> _openTutorial() async {
+    final Uri uri = Uri.parse(AppLinks.healthTutorial);
+
+    if (!await launchUrl(
+      uri,
+      mode: LaunchMode.externalApplication,
+    )) {
+      throw Exception('Could not launch tutorial');
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     _initData();
     _initIAP();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showFreeLimitsDialog();
+    });
   }
 
   @override
   void dispose() {
-    _purchaseSub?.cancel(); 
+    _purchaseSub?.cancel();
     _profileController.dispose();
     _nhsController.dispose();
     super.dispose();
@@ -218,46 +250,131 @@ class _MyHomePageState extends State<MyHomePage> {
         (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)));
   }
 
+  void _showFreeLimitsDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Usage Limits'),
+        // ignore: prefer_const_constructors
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          // ignore: prefer_const_literals_to_create_immutables
+          children: [
+            // ignore: prefer_const_constructors
+            Row(
+              children: const [
+                Icon(Icons.calendar_today, color: Colors.orange),
+                SizedBox(width: 8),
+                Text('15 entries per month'),
+              ],
+            ),
+            // ignore: prefer_const_constructors
+            SizedBox(height: 8),
+            // ignore: prefer_const_constructors
+            Row(
+              children: const [
+                Icon(Icons.picture_as_pdf, color: Colors.red),
+                SizedBox(width: 8),
+                Text('1 PDF report every 3 months'),
+              ],
+            ),
+            // ignore: prefer_const_constructors
+            SizedBox(height: 8),
+            // ignore: prefer_const_constructors
+            Row(
+              children: const [
+                Icon(Icons.table_chart, color: Colors.blue),
+                SizedBox(width: 8),
+                Text('1 CSV export per month'),
+              ],
+            ),
+            // ignore: prefer_const_constructors
+            SizedBox(height: 16),
+            const Text(
+              'Upgrade to Pro for unlimited entries and PDF reports!',
+              style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showUpgrade(
+                  'Upgrade to Pro for unlimited entries and PDF reports!');
+            },
+            child: const Text('Upgrade to Pro'),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Dialogs ──
   void _showUpgrade(String msg) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Upgrade to Pro'),
-        content: Text(msg),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(msg),
+              const SizedBox(height: 16),
+              const Text(
+                'MyHealthTrail Pro – \$2.99 per month',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Auto-renewable subscription.\n'
+                'Payment will be charged to your Apple ID account at confirmation of purchase.\n'
+                'Subscription renews automatically unless cancelled at least 24 hours before the end of the current period.\n'
+                'You can manage or cancel your subscription in your App Store account settings.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('Not now'),
-            
           ),
           TextButton(
-  onPressed: () async {
-    Navigator.pop(context);
-    await _iap.restorePurchases();
-  },
-  child: const Text('Restore'),
-),
+            onPressed: () async {
+              Navigator.pop(context);
+              await _iap.restorePurchases();
+            },
+            child: const Text('Restore'),
+          ),
           ElevatedButton(
-  onPressed: () async {
-    Navigator.pop(context);
-    if (_proMonthlyProduct != null) {
-      await _iap.buyNonConsumable(
-        purchaseParam: PurchaseParam(productDetails: _proMonthlyProduct!),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Store not available')),
-      );
-    }
-  },
-  child: const Text('Buy Pro'),
-),
+            onPressed: () async {
+              Navigator.pop(context);
+              if (_proMonthlyProduct != null) {
+                await _iap.buyNonConsumable(
+                  purchaseParam:
+                      PurchaseParam(productDetails: _proMonthlyProduct!),
+                );
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Store not available')),
+                );
+              }
+            },
+            child: const Text('Buy Pro'),
+          ),
         ],
       ),
     );
   }
-
 
   // ─────────────────────────  ADD ENTRY  ─────────────────────────
   Future<void> _addEntry() async {
@@ -439,6 +556,12 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _shareCSV() async {
+    if (!await ProLimits.canExportCsv()) {
+      _showUpgrade(
+          'You\'ve reached your free CSV export limit this month.\n\nUpgrade to Pro for unlimited CSV exports.');
+      return;
+    }
+
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/myhealthtrail_readings.csv');
     if (!await file.exists()) await _exportToCSV();
@@ -447,6 +570,7 @@ class _MyHomePageState extends State<MyHomePage> {
       sharePositionOrigin: _shareOrigin(),
       text: 'MyHealthTrail readings (CSV)',
     );
+    await ProLimits.incrementCsvExports();
   }
 
   // ─────────────────────────  PDF EXPORT  ─────────────────────────
@@ -470,6 +594,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
     final items = _entriesInLast3Months();
     if (items.isEmpty) {
+      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('No health entries found in the last 3 months.')));
       return;
@@ -477,6 +602,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
     // Show loading
     showDialog(
+      // ignore: use_build_context_synchronously
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
@@ -625,6 +751,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                   pw.Text(
                     'Period: Last 3 Months',
+                    // ignore: prefer_const_constructors
                     style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
                   ),
                 ],
@@ -647,10 +774,12 @@ class _MyHomePageState extends State<MyHomePage> {
         children: [
           pw.Text(
             'Generated by MyHealthTrail App',
+            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey),
           ),
           pw.Text(
             'Page ${context.pageNumber} of ${context.pagesCount}',
+            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey),
           ),
         ],
@@ -720,6 +849,7 @@ class _MyHomePageState extends State<MyHomePage> {
           pw.SizedBox(height: 4),
           pw.Text(
             label,
+            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
           ),
         ],
@@ -818,7 +948,7 @@ class _MyHomePageState extends State<MyHomePage> {
               _tableCell(_formatTimeOnly(e.dateTime)),
               _tableCell('${e.systolic}/${e.diastolic}'),
               _statusCell(status),
-              _tableCell(e.notes),
+              _tableCell(''),
             ],
           );
         }),
@@ -852,7 +982,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 _tableCell(_formatDateOnly(e.dateTime)),
                 _tableCell(_formatTimeOnly(e.dateTime)),
                 _tableCell(e.weight),
-                _tableCell(e.notes),
+                _tableCell(''),
               ],
             )),
       ],
@@ -948,6 +1078,7 @@ class _MyHomePageState extends State<MyHomePage> {
             'medical advice, diagnosis, or treatment. The status indicators (Normal, High, Low) '
             'are based on general guidelines and may not apply to your specific health situation. '
             'Always consult your healthcare provider for medical decisions.',
+            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
           ),
           pw.SizedBox(height: 8),
@@ -955,6 +1086,7 @@ class _MyHomePageState extends State<MyHomePage> {
             'Reference Ranges:\n'
             '• Blood Sugar: Normal 4.0-7.0 mmol/L | High >7.0 | Low <4.0\n'
             '• Blood Pressure: Normal <120/80 mmHg | Elevated 120-129 | High ≥130/80',
+            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
           ),
         ],
@@ -1128,6 +1260,11 @@ class _MyHomePageState extends State<MyHomePage> {
         title: Text(widget.title),
         actions: [
           IconButton(
+            icon: const Icon(Icons.play_circle_outline, color: Colors.white),
+            tooltip: 'Watch Tutorial',
+            onPressed: _openTutorial,
+          ),
+          IconButton(
             icon: const Icon(Icons.info_outline),
             onPressed: _showAboutDialog,
             tooltip: 'About',
@@ -1180,6 +1317,7 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
           ),
+          const LegalFooter(),
         ],
       ),
     );

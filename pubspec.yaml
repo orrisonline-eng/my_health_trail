@@ -3,7 +3,7 @@ description: Track your blood sugar, blood pressure, and weight.
 
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.0.0+7
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -11,6 +11,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  url_launcher: ^6.3.0
+
+  
   
   # Storage
   shared_preferences: ^2.2.2
@@ -19,7 +22,7 @@ dependencies:
   # Export
   csv: ^5.1.1
   pdf: ^3.10.7
-  share_plus: ^7.2.1
+  share_plus: ^10.0.0
   
   # Icons
   cupertino_icons: ^1.0.6

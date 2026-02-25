@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'pro_limits.dart';
 
+const String kProMonthlyProductId = 'myhealthtrail_pro_monthly';
+
+
 class PurchaseService {
   static final PurchaseService _instance = PurchaseService._internal();
   factory PurchaseService() => _instance;
@@ -11,7 +14,7 @@ class PurchaseService {
   final InAppPurchase _iap = InAppPurchase.instance;
   
   // Product ID - must match App Store Connect & Google Play Console
-  static const String proLifetimeId = 'pro_lifetime';
+  static const String proMonthlyId = 'pro_monthly';
   
   StreamSubscription<List<PurchaseDetails>>? _subscription;
   List<ProductDetails> _products = [];
@@ -45,7 +48,7 @@ class PurchaseService {
   }
 
   Future<void> _loadProducts() async {
-    final Set<String> productIds = {proLifetimeId};
+    final Set<String> productIds = {kProMonthlyProductId};
     final ProductDetailsResponse response = await _iap.queryProductDetails(productIds);
     
     if (response.error != null) {
@@ -71,7 +74,7 @@ class PurchaseService {
     if (purchase.status == PurchaseStatus.purchased ||
         purchase.status == PurchaseStatus.restored) {
       // Verify and deliver the product
-      if (purchase.productID == proLifetimeId) {
+      if (purchase.productID == kProMonthlyProductId) {
         await ProLimits.setPro(true);
         debugPrint('Pro unlocked!');
       }
@@ -96,7 +99,7 @@ class PurchaseService {
 
     ProductDetails? product;
     try {
-      product = _products.firstWhere((p) => p.id == proLifetimeId);
+      product = products.firstWhere((p) => p.id == kProMonthlyProductId);
     } catch (e) {
       debugPrint('Product not found');
       return false;
@@ -122,7 +125,7 @@ class PurchaseService {
   String get priceString {
     if (_products.isEmpty) return '£2.99';
     try {
-      final product = _products.firstWhere((p) => p.id == proLifetimeId);
+      final product = _products.firstWhere((p) => p.id == kProMonthlyProductId);
       return product.price;
     } catch (e) {
       return '£2.99';
