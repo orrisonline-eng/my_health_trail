@@ -133,6 +133,29 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+      throw Exception('Could not launch $url');
+    }
+  }
+
+  Widget _paywallLegalLinks() {
+    return Wrap(
+      spacing: 12,
+      children: [
+        TextButton(
+          onPressed: () => _openUrl(AppLinks.privacyPolicy),
+          child: const Text('Privacy Policy'),
+        ),
+        TextButton(
+          onPressed: () => _openUrl(AppLinks.termsOfUse),
+          child: const Text('Terms of Use'),
+        ),
+      ],
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -340,6 +363,8 @@ class _MyHomePageState extends State<MyHomePage> {
                 'You can manage or cancel your subscription in your App Store account settings.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
+              const SizedBox(height: 12),
+              _paywallLegalLinks(),
             ],
           ),
         ),
