@@ -6,32 +6,67 @@
   Purpose:
   - App bootstrap and global configuration
   - Initialises Flutter bindings
-  - Sets up In-App Purchases (Pro features)
+  - Sets up Pro purchase verification with backend
   - Launches the main application widget
+
   Project: MyHealthTrail
 */
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:flutter/material.dart';
-import 'package:share_plus/share_plus.dart';
+
 import 'package:csv/csv.dart';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'pro_limits.dart';
-import 'package:in_app_purchase/in_app_purchase.dart';
-import 'widgets/legal_links.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'app_links.dart';
+import 'package:uuid/uuid.dart';
 
-// ================== IAP / PRO CONSTANTS ==================
-const String kProMonthlyProductId = 'myhealthtrail_pro_monthly';
+import 'app_links.dart';
+import 'pro_iap.dart';
+import 'widgets/legal_links.dart';
+
+const String trialStartKey = 'trial_start';
+const String trialInfoShownKey = 'trial_info_shown';
+const int trialDays = 7;
+
+Future<void> startTrialIfNeeded() async {
+  final prefs = await SharedPreferences.getInstance();
+  if (!prefs.containsKey(trialStartKey)) {
+    await prefs.setString(trialStartKey, DateTime.now().toIso8601String());
+  }
+}
+
+Future<bool> isTrialActive() async {
+  final prefs = await SharedPreferences.getInstance();
+  final startStr = prefs.getString(trialStartKey);
+  if (startStr == null) return true;
+
+  final startDate = DateTime.parse(startStr);
+  final now = DateTime.now();
+  return now.isBefore(startDate.add(const Duration(days: trialDays)));
+}
+
+Future<int> trialDaysLeft() async {
+  final prefs = await SharedPreferences.getInstance();
+  final startStr = prefs.getString(trialStartKey);
+  if (startStr == null) return trialDays;
+
+  final startDate = DateTime.parse(startStr);
+  final endDate = startDate.add(const Duration(days: trialDays));
+  final now = DateTime.now();
+  final daysLeft = endDate.difference(now).inDays;
+  return daysLeft > 0 ? daysLeft : 0;
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await startTrialIfNeeded();
+  await ProIap.init();
   runApp(const MyApp());
 }
 
@@ -108,27 +143,23 @@ class _MyHomePageState extends State<MyHomePage> {
   static const _entriesKey = 'health_entries_list';
   static const _profileKey = 'health_profile_name';
   static const _nhsKey = 'health_nhs_number';
+  static const _appUserIdKey = 'app_user_id';
+
+  static const String _supabaseUrl = 'https://yaaqlytgwjblgqvhkhno.supabase.co';
+  static const String _supabasePublishableKey =
+      'sb_publishable_C-EC1V1EPiKiO-yfbxQaEg_h3vrT0Fu';
 
   final _entries = <HealthEntry>[];
   final _profileController = TextEditingController();
   final _nhsController = TextEditingController();
 
-  // ================= IAP (In-App Purchase) =================
-  final InAppPurchase _iap = InAppPurchase.instance;
-  StreamSubscription<List<PurchaseDetails>>? _purchaseSub;
-
-  bool _iapAvailable = false;
-  ProductDetails? _proMonthlyProduct;
-  // ignore: unused_field
+  String? _appUserId;
   String? _iapError;
 
   Future<void> _openTutorial() async {
     final Uri uri = Uri.parse(AppLinks.healthTutorial);
 
-    if (!await launchUrl(
-      uri,
-      mode: LaunchMode.externalApplication,
-    )) {
+    if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       throw Exception('Could not launch tutorial');
     }
   }
@@ -159,77 +190,286 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _initData();
-    _initIAP();
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _showFreeLimitsDialog();
-    });
+    _initIapAndData();
   }
 
   @override
   void dispose() {
-    _purchaseSub?.cancel();
+    ProIap.dispose();
     _profileController.dispose();
     _nhsController.dispose();
     super.dispose();
   }
 
-  Future<void> _initData() async {
+  Future<void> _initIapAndData() async {
+    await startTrialIfNeeded();
+    await _loadOrCreateAppUserId();
     await _loadProfileData();
     await _loadEntries();
-  }
 
-  Future<void> _initIAP() async {
+    ProIap.onVerifiedPurchase = (productId) async {
+      await _verifyIapWithBackend(productId: productId);
+    };
+
     try {
-      _iapAvailable = await _iap.isAvailable();
-      if (!_iapAvailable) return;
-
-      // ================= IAP INITIALISATION =================
-      // Listen to purchase updates
-
-      _purchaseSub = _iap.purchaseStream.listen(
-        _onPurchaseUpdated,
-        onError: (error) {
-          if (mounted) {
-            setState(() => _iapError = error.toString());
-          }
-        },
-      );
-
-      // Query products
-      final response = await _iap.queryProductDetails(
-        {kProMonthlyProductId},
-      );
-
-      if (response.error != null) {
-        if (mounted) {
-          setState(() => _iapError = response.error!.message);
-        }
-        return;
-      }
-
-      if (response.productDetails.isNotEmpty) {
-        setState(() {
-          _proMonthlyProduct = response.productDetails.first;
-        });
-      }
+      await ProIap.init();
     } catch (e) {
-      if (mounted) setState(() => _iapError = e.toString());
+      _iapError = e.toString();
+    }
+
+    await _refreshProStatusFromBackend();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      final trialActive = await isTrialActive();
+      final infoShown = prefs.getBool(trialInfoShownKey) ?? false;
+
+      if (!ProIap.isPro && trialActive && !infoShown) {
+        _showTrialInfoDialog();
+        await prefs.setBool(trialInfoShownKey, true);
+      } else if (!ProIap.isPro && !trialActive) {
+        _showTrialExpiredDialog();
+      }
+    });
+
+    if (mounted) {
+      setState(() {});
     }
   }
 
-  void _onPurchaseUpdated(List<PurchaseDetails> purchases) async {
-    for (final purchase in purchases) {
-      if (purchase.status == PurchaseStatus.purchased ||
-          purchase.status == PurchaseStatus.restored) {
-        await ProLimits.setPro(true);
+  Future<void> _loadOrCreateAppUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    var id = prefs.getString(_appUserIdKey);
 
-        if (purchase.pendingCompletePurchase) {
-          await _iap.completePurchase(purchase);
-        }
-      }
+    if (id == null || id.isEmpty) {
+      id = const Uuid().v4();
+      await prefs.setString(_appUserIdKey, id);
     }
+
+    _appUserId = id;
+  }
+
+  Future<void> _refreshProStatusFromBackend() async {
+    if (_appUserId == null || _appUserId!.isEmpty) return;
+
+    final uri = Uri.parse('$_supabaseUrl/functions/v1/get-entitlement');
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': _supabasePublishableKey,
+      },
+      body: jsonEncode({
+        'app_user_id': _appUserId,
+        'app': 'myhealthtrail',
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      debugPrint('get-entitlement failed: ${response.body}');
+      return;
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final isPro = data['isPro'] == true;
+
+    await ProIap.debugSetPro(isPro);
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _verifyIapWithBackend({
+    required String productId,
+  }) async {
+    if (_appUserId == null || _appUserId!.isEmpty) return;
+
+    final uri = Uri.parse('$_supabaseUrl/functions/v1/verify-iap');
+
+    final response = await http.post(
+      uri,
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': _supabasePublishableKey,
+      },
+      body: jsonEncode({
+        'app_user_id': _appUserId,
+        'platform': Platform.isIOS ? 'ios' : 'android',
+        'product_id': productId,
+        'app': 'myhealthtrail',
+        'publishable_key': _supabasePublishableKey,
+      }),
+    );
+
+    if (response.statusCode != 200) {
+      debugPrint('verify-iap failed: ${response.body}');
+      return;
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final isPro = data['isPro'] == true;
+
+    await ProIap.debugSetPro(isPro);
+
+    if (isPro) {
+      await _refreshProStatusFromBackend();
+    }
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<bool> _hasActiveAccess() async {
+    if (ProIap.isPro) return true;
+    return isTrialActive();
+  }
+
+  String _proPriceText() {
+    final product = ProIap.cachedProduct;
+    if (product != null) {
+      return '${product.price} per month';
+    }
+    return '\$2.99 per month';
+  }
+
+  void _showTrialInfoDialog() async {
+    final daysLeft = await trialDaysLeft();
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Free Trial'),
+        content: Text(
+          'You are on a free 7-day trial.\n'
+          'You have $daysLeft day(s) left.\n\n'
+          'MyHealthTrail Pro costs ${_proPriceText()}.\n\n'
+          'Upgrade to Pro for uninterrupted access after your trial ends.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await ProIap.restore();
+            },
+            child: const Text('Restore'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showUpgrade(
+                'Your free trial is active.\n\nUpgrade to Pro now for uninterrupted access after your 7-day trial ends.',
+              );
+            },
+            child: const Text('Upgrade to Pro'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTrialExpiredDialog() {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Trial Expired'),
+        content: const Text(
+          'Your free 7-day trial has ended.\n\nUpgrade to Pro to continue using MyHealthTrail.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await ProIap.restore();
+            },
+            child: const Text('Restore'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _showUpgrade(
+                'Your free 7-day trial has ended.\n\nUpgrade to Pro to continue using MyHealthTrail.',
+              );
+            },
+            child: const Text('Upgrade to Pro'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUpgrade(String msg) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Upgrade to Pro'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(msg),
+              const SizedBox(height: 16),
+              const Text(
+                'MyHealthTrail Pro – \$2.99 per month',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Auto-renewable subscription.\n'
+                'Payment will be charged to your Apple ID account at confirmation of purchase.\n'
+                'Subscription renews automatically unless cancelled at least 24 hours before the end of the current period.\n'
+                'You can manage or cancel your subscription in your App Store account settings.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              _paywallLegalLinks(),
+              if (_iapError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _iapError!,
+                  style: const TextStyle(fontSize: 12, color: Colors.red),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Not now'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              await ProIap.restore();
+            },
+            child: const Text('Restore'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await ProIap.buyPro();
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(e.toString())),
+                );
+              }
+            },
+            child: const Text('Buy Pro'),
+          ),
+        ],
+      ),
+    );
   }
 
   Rect _shareOrigin() {
@@ -273,139 +513,10 @@ class _MyHomePageState extends State<MyHomePage> {
         (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)));
   }
 
-  void _showFreeLimitsDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Usage Limits'),
-        // ignore: prefer_const_constructors
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          // ignore: prefer_const_literals_to_create_immutables
-          children: [
-            // ignore: prefer_const_constructors
-            Row(
-              children: const [
-                Icon(Icons.calendar_today, color: Colors.orange),
-                SizedBox(width: 8),
-                Text('15 entries per month'),
-              ],
-            ),
-            // ignore: prefer_const_constructors
-            SizedBox(height: 8),
-            // ignore: prefer_const_constructors
-            Row(
-              children: const [
-                Icon(Icons.picture_as_pdf, color: Colors.red),
-                SizedBox(width: 8),
-                Text('1 PDF report every 3 months'),
-              ],
-            ),
-            // ignore: prefer_const_constructors
-            SizedBox(height: 8),
-            // ignore: prefer_const_constructors
-            Row(
-              children: const [
-                Icon(Icons.table_chart, color: Colors.blue),
-                SizedBox(width: 8),
-                Text('1 CSV export per month'),
-              ],
-            ),
-            // ignore: prefer_const_constructors
-            SizedBox(height: 16),
-            const Text(
-              'Upgrade to Pro for unlimited entries and PDF reports!',
-              style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _showUpgrade(
-                  'Upgrade to Pro for unlimited entries and PDF reports!');
-            },
-            child: const Text('Upgrade to Pro'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── Dialogs ──
-  void _showUpgrade(String msg) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Upgrade to Pro'),
-        content: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(msg),
-              const SizedBox(height: 16),
-              const Text(
-                'MyHealthTrail Pro – \$2.99 per month',
-                style: TextStyle(fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'Auto-renewable subscription.\n'
-                'Payment will be charged to your Apple ID account at confirmation of purchase.\n'
-                'Subscription renews automatically unless cancelled at least 24 hours before the end of the current period.\n'
-                'You can manage or cancel your subscription in your App Store account settings.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-              const SizedBox(height: 12),
-              _paywallLegalLinks(),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Not now'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await _iap.restorePurchases();
-            },
-            child: const Text('Restore'),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              if (_proMonthlyProduct != null) {
-                await _iap.buyNonConsumable(
-                  purchaseParam:
-                      PurchaseParam(productDetails: _proMonthlyProduct!),
-                );
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Store not available')),
-                );
-              }
-            },
-            child: const Text('Buy Pro'),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ─────────────────────────  ADD ENTRY  ─────────────────────────
   Future<void> _addEntry() async {
-    if (!await ProLimits.canAddEntry()) {
-      _showUpgrade(
-          'You\'ve reached 10 entries this month on the Free plan.\n\nUpgrade to Pro for unlimited entries.');
+    if (!await _hasActiveAccess()) {
+      _showTrialExpiredDialog();
       return;
     }
 
@@ -419,7 +530,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
     await _saveEntries();
     await _exportToCSV();
-    await ProLimits.incrementEntries();
 
     if (!mounted) return;
     ScaffoldMessenger.of(context)
@@ -516,7 +626,6 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
           TextButton(
             onPressed: () {
-              // Validate at least one value
               if (sugar.text.trim().isEmpty &&
                   sys.text.trim().isEmpty &&
                   dia.text.trim().isEmpty &&
@@ -581,9 +690,8 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _shareCSV() async {
-    if (!await ProLimits.canExportCsv()) {
-      _showUpgrade(
-          'You\'ve reached your free CSV export limit this month.\n\nUpgrade to Pro for unlimited CSV exports.');
+    if (!await _hasActiveAccess()) {
+      _showTrialExpiredDialog();
       return;
     }
 
@@ -595,7 +703,6 @@ class _MyHomePageState extends State<MyHomePage> {
       sharePositionOrigin: _shareOrigin(),
       text: 'MyHealthTrail readings (CSV)',
     );
-    await ProLimits.incrementCsvExports();
   }
 
   // ─────────────────────────  PDF EXPORT  ─────────────────────────
@@ -611,23 +718,19 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _export3MonthReportPdf() async {
-    if (!await ProLimits.canExportPdf()) {
-      _showUpgrade(
-          'You\'ve reached your 1 free PDF export this month.\n\nUpgrade to Pro for unlimited reports.');
+    if (!await _hasActiveAccess()) {
+      _showTrialExpiredDialog();
       return;
     }
 
     final items = _entriesInLast3Months();
     if (items.isEmpty) {
-      // ignore: use_build_context_synchronously
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
           content: Text('No health entries found in the last 3 months.')));
       return;
     }
 
-    // Show loading
     showDialog(
-      // ignore: use_build_context_synchronously
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
@@ -641,14 +744,13 @@ class _MyHomePageState extends State<MyHomePage> {
       await file.writeAsBytes(await pdf.save());
 
       if (!mounted) return;
-      Navigator.pop(context); // Close loading
+      Navigator.pop(context);
 
       await Share.shareXFiles(
         [XFile(file.path)],
         sharePositionOrigin: _shareOrigin(),
         text: 'MyHealthTrail 3-Month Health Report',
       );
-      await ProLimits.incrementPdfExports();
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);
@@ -674,29 +776,22 @@ class _MyHomePageState extends State<MyHomePage> {
         build: (context) => [
           _buildSummarySection(stats, items.length),
           pw.SizedBox(height: 20),
-
-          // Blood Sugar
           if (items.any((e) => e.bloodSugar.isNotEmpty)) ...[
             _buildSectionTitle('Blood Sugar Readings', PdfColors.red),
             _buildBloodSugarTable(items),
             pw.SizedBox(height: 20),
           ],
-          // Blood Pressure
           if (items
               .any((e) => e.systolic.isNotEmpty || e.diastolic.isNotEmpty)) ...[
             _buildSectionTitle('Blood Pressure Readings', PdfColors.blue),
             _buildBloodPressureTable(items),
             pw.SizedBox(height: 20),
           ],
-
-          // Weight
           if (items.any((e) => e.weight.isNotEmpty)) ...[
             _buildSectionTitle('Weight Readings', PdfColors.green),
             _buildWeightTable(items),
             pw.SizedBox(height: 20),
           ],
-
-          // Disclaimer
           _buildDisclaimer(),
         ],
       ),
@@ -706,7 +801,6 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   // ─────────────────────────  PDF COMPONENTS  ─────────────────────────
-
   pw.Widget _buildPdfHeader(
       String profileName, String nhsNumber, DateTime now) {
     return pw.Container(
@@ -776,7 +870,6 @@ class _MyHomePageState extends State<MyHomePage> {
                   ),
                   pw.Text(
                     'Period: Last 3 Months',
-                    // ignore: prefer_const_constructors
                     style: pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
                   ),
                 ],
@@ -799,12 +892,10 @@ class _MyHomePageState extends State<MyHomePage> {
         children: [
           pw.Text(
             'Generated by MyHealthTrail App',
-            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey),
           ),
           pw.Text(
             'Page ${context.pageNumber} of ${context.pagesCount}',
-            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey),
           ),
         ],
@@ -874,7 +965,6 @@ class _MyHomePageState extends State<MyHomePage> {
           pw.SizedBox(height: 4),
           pw.Text(
             label,
-            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
           ),
         ],
@@ -1103,7 +1193,6 @@ class _MyHomePageState extends State<MyHomePage> {
             'medical advice, diagnosis, or treatment. The status indicators (Normal, High, Low) '
             'are based on general guidelines and may not apply to your specific health situation. '
             'Always consult your healthcare provider for medical decisions.',
-            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 9, color: PdfColors.grey800),
           ),
           pw.SizedBox(height: 8),
@@ -1111,7 +1200,6 @@ class _MyHomePageState extends State<MyHomePage> {
             'Reference Ranges:\n'
             '• Blood Sugar: Normal 4.0-7.0 mmol/L | High >7.0 | Low <4.0\n'
             '• Blood Pressure: Normal <120/80 mmHg | Elevated 120-129 | High ≥130/80',
-            // ignore: prefer_const_constructors
             style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
           ),
         ],
@@ -1120,11 +1208,9 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   // ─────────────────────────  HELPER METHODS  ─────────────────────────
-
   Map<String, dynamic> _calculateStats(List<HealthEntry> items) {
     final stats = <String, dynamic>{};
 
-    // Blood Sugar
     final sugarValues = items
         .where((e) => e.bloodSugar.isNotEmpty)
         .map((e) => double.tryParse(e.bloodSugar))
@@ -1137,7 +1223,6 @@ class _MyHomePageState extends State<MyHomePage> {
               .toStringAsFixed(1);
     }
 
-    // Blood Pressure
     final sysValues = items
         .where((e) => e.systolic.isNotEmpty)
         .map((e) => int.tryParse(e.systolic))
@@ -1160,7 +1245,6 @@ class _MyHomePageState extends State<MyHomePage> {
           (diaValues.reduce((a, b) => a + b) / diaValues.length).round();
     }
 
-    // Weight
     final weightValues = items
         .where((e) => e.weight.isNotEmpty)
         .map((e) => double.tryParse(e.weight))
@@ -1240,7 +1324,6 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   // ─────────────────────────  CLEAR ALL  ─────────────────────────
-
   Future<void> _confirmAndClearAll() async {
     final ok = await showDialog<bool>(
           context: context,
@@ -1275,7 +1358,6 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   // ─────────────────────────  UI BUILD  ─────────────────────────
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1298,29 +1380,50 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       body: Column(
         children: [
-          // DEV MODE BANNER
-          if (ProLimits.devMode)
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-              color: Colors.orange,
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.developer_mode, color: Colors.white, size: 18),
-                  SizedBox(width: 8),
-                  Text(
-                    'DEV MODE - Limits Disabled',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
+          FutureBuilder<int>(
+            future: trialDaysLeft(),
+            builder: (context, snapshot) {
+              final days = snapshot.data ?? trialDays;
+              if (!ProIap.isPro && days > 0) {
+                return Container(
+                  width: double.infinity,
+                  margin:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  padding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    border: Border(
+                      bottom: BorderSide(color: Colors.orange.shade300),
                     ),
                   ),
-                ],
-              ),
-            ),
-          // MAIN CONTENT
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timer, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Free trial: $days day(s) left',
+                          style: TextStyle(
+                            color: Colors.orange.shade900,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _showUpgrade(
+                          'Your free trial is active.\n\nUpgrade to Pro now for uninterrupted access after your 7-day trial ends.',
+                        ),
+                        child: const Text('Upgrade'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(16),
@@ -1561,7 +1664,6 @@ class _MyHomePageState extends State<MyHomePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Date/Time
           SizedBox(
             width: 85,
             child: Column(
@@ -1580,7 +1682,6 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
           const SizedBox(width: 12),
-          // Values
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1607,7 +1708,6 @@ class _MyHomePageState extends State<MyHomePage> {
               ],
             ),
           ),
-          // Delete button
           IconButton(
             icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey[400]),
             onPressed: () => _deleteEntry(entry),
@@ -1659,31 +1759,29 @@ class _MyHomePageState extends State<MyHomePage> {
       children: [
         const Divider(),
         const SizedBox(height: 8),
-        if (ProLimits.devMode)
-          Container(
-            margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.orange[100],
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: Colors.orange),
-            ),
-            child: const Text(
-              '⚠️ Dev Mode: All limits bypassed',
-              style: TextStyle(fontSize: 11, color: Colors.orange),
-            ),
-          )
-        else
-          Text(
-            'Free plan: 10 entries/month • 1 PDF export/month',
-            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-            textAlign: TextAlign.center,
-          ),
+        FutureBuilder<int>(
+          future: trialDaysLeft(),
+          builder: (context, snapshot) {
+            final days = snapshot.data ?? trialDays;
+            final text = ProIap.isPro
+                ? 'Pro active'
+                : days > 0
+                    ? 'Free trial: $days day(s) left'
+                    : 'Trial ended. Upgrade to Pro to continue using MyHealthTrail.';
+
+            return Text(
+              text,
+              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            );
+          },
+        ),
         const SizedBox(height: 4),
-        if (!ProLimits.devMode)
+        if (!ProIap.isPro)
           TextButton(
             onPressed: () => _showUpgrade(
-                'Upgrade to Pro for unlimited entries and PDF exports!'),
+              'Upgrade to Pro to continue using MyHealthTrail after your 7-day free trial.',
+            ),
             child: const Text('Upgrade to Pro', style: TextStyle(fontSize: 13)),
           ),
         const SizedBox(height: 8),
@@ -1718,6 +1816,11 @@ class _MyHomePageState extends State<MyHomePage> {
               Text(
                 'Track your blood sugar, blood pressure, and weight easily. '
                 'All data is stored securely on your device.',
+              ),
+              SizedBox(height: 12),
+              Text(
+                'Includes a 7-day free trial, with Pro available for continued access afterward.',
+                style: TextStyle(fontSize: 12),
               ),
               SizedBox(height: 16),
               Text(
