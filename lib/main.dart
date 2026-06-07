@@ -207,8 +207,11 @@ class _MyHomePageState extends State<MyHomePage> {
     await _loadProfileData();
     await _loadEntries();
 
-    ProIap.onVerifiedPurchase = (productId) async {
-      await _verifyIapWithBackend(productId: productId);
+    ProIap.onVerifiedPurchase = (purchase) async {
+      await _verifyIapWithBackend(
+        productId: purchase.productID,
+        receiptData: purchase.verificationData.serverVerificationData,
+      );
     };
 
     try {
@@ -217,7 +220,7 @@ class _MyHomePageState extends State<MyHomePage> {
       _iapError = e.toString();
     }
 
-    await _refreshProStatusFromBackend();
+    // await _refreshProStatusFromBackend();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final prefs = await SharedPreferences.getInstance();
@@ -283,6 +286,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _verifyIapWithBackend({
     required String productId,
+    required String receiptData,
   }) async {
     if (_appUserId == null || _appUserId!.isEmpty) return;
 
@@ -298,6 +302,7 @@ class _MyHomePageState extends State<MyHomePage> {
         'app_user_id': _appUserId,
         'platform': Platform.isIOS ? 'ios' : 'android',
         'product_id': productId,
+        'receipt_data': receiptData,
         'app': 'myhealthtrail',
         'publishable_key': _supabasePublishableKey,
       }),

@@ -59,6 +59,12 @@ class ProIap {
 
     _purchaseSub ??= _iap.purchaseStream.listen(
       (purchases) {
+        debugPrint('Purchase stream received ${purchases.length} purchase(s)');
+
+        for (final p in purchases) {
+          debugPrint('Purchase: ${p.productID} | Status: ${p.status}');
+        }
+
         _updateProStatus(purchases);
       },
       onError: (e) => debugPrint('IAP stream error: $e'),
@@ -96,7 +102,7 @@ class ProIap {
     cachedProduct = match ?? response.productDetails.first;
   }
 
-    static Future<void> buyPro() async {
+  static Future<void> buyPro() async {
     final available = await _iap.isAvailable();
     if (!available) {
       debugPrint('IAP not available');
@@ -132,7 +138,7 @@ class ProIap {
     }
   }
 
-  static Future<void> Function(String productId)? onVerifiedPurchase;
+  static Future<void> Function(PurchaseDetails purchase)? onVerifiedPurchase;
 
   static Future<void> _updateProStatus(
     List<PurchaseDetails> purchases,
@@ -145,7 +151,13 @@ class ProIap {
       if (p.status == PurchaseStatus.purchased ||
           p.status == PurchaseStatus.restored) {
         await _setPro(true);
-        await onVerifiedPurchase?.call(p.productID);
+
+        try {
+          await onVerifiedPurchase?.call(p);
+        } catch (e) {
+          debugPrint(
+              'Backend verify failed, but Apple purchase was restored: $e');
+        }
 
         if (p.pendingCompletePurchase) {
           await _iap.completePurchase(p);
