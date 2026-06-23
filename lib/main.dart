@@ -337,7 +337,7 @@ class _MyHomePageState extends State<MyHomePage> {
     if (product != null) {
       return '${product.price} per month';
     }
-    return '\$2.99 per month';
+    return 'the monthly price shown by Google Play';
   }
 
   void _showTrialInfoDialog() async {
@@ -422,17 +422,20 @@ class _MyHomePageState extends State<MyHomePage> {
             children: [
               Text(msg),
               const SizedBox(height: 16),
-              const Text(
-                'MyHealthTrail Pro – \$2.99 per month',
-                style: TextStyle(fontWeight: FontWeight.bold),
+              Text(
+                'MyHealthTrail Pro • ${_proPriceText()}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
               const Text(
                 'Auto-renewable subscription.\n'
-                'Payment will be charged to your Apple ID account at confirmation of purchase.\n'
+                'Payment will be charged to your Google Play account at confirmation of purchase.\n'
                 'Subscription renews automatically unless cancelled at least 24 hours before the end of the current period.\n'
-                'You can manage or cancel your subscription in your App Store account settings.',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                'You can manage or cancel your subscription in Google Play.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey,
+                ),
               ),
               const SizedBox(height: 12),
               _paywallLegalLinks(),

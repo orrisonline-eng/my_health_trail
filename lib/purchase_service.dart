@@ -5,29 +5,28 @@ import 'pro_limits.dart';
 
 const String kProMonthlyProductId = 'myhealthtrail_pro_monthly';
 
-
 class PurchaseService {
   static final PurchaseService _instance = PurchaseService._internal();
   factory PurchaseService() => _instance;
   PurchaseService._internal();
 
   final InAppPurchase _iap = InAppPurchase.instance;
-  
+
   // Product ID - must match App Store Connect & Google Play Console
   static const String proMonthlyId = 'pro_monthly';
-  
+
   StreamSubscription<List<PurchaseDetails>>? _subscription;
   List<ProductDetails> _products = [];
-  
+
   bool _isAvailable = false;
   bool get isAvailable => _isAvailable;
-  
+
   List<ProductDetails> get products => _products;
 
   /// Initialize the purchase service
   Future<void> initialize() async {
     _isAvailable = await _iap.isAvailable();
-    
+
     if (!_isAvailable) {
       debugPrint('IAP not available');
       return;
@@ -42,24 +41,25 @@ class PurchaseService {
 
     // Load products
     await _loadProducts();
-    
+
     // Restore previous purchases
     await restorePurchases();
   }
 
   Future<void> _loadProducts() async {
     final Set<String> productIds = {kProMonthlyProductId};
-    final ProductDetailsResponse response = await _iap.queryProductDetails(productIds);
-    
+    final ProductDetailsResponse response =
+        await _iap.queryProductDetails(productIds);
+
     if (response.error != null) {
       debugPrint('Error loading products: ${response.error}');
       return;
     }
-    
+
     if (response.notFoundIDs.isNotEmpty) {
       debugPrint('Products not found: ${response.notFoundIDs}');
     }
-    
+
     _products = response.productDetails;
     debugPrint('Loaded ${_products.length} products');
   }
@@ -106,7 +106,7 @@ class PurchaseService {
     }
 
     final PurchaseParam purchaseParam = PurchaseParam(productDetails: product);
-    
+
     try {
       return await _iap.buyNonConsumable(purchaseParam: purchaseParam);
     } catch (e) {
@@ -123,12 +123,12 @@ class PurchaseService {
 
   /// Get the price string for display
   String get priceString {
-    if (_products.isEmpty) return '£2.99';
+    if (_products.isEmpty) return 'Loading price...';
     try {
       final product = _products.firstWhere((p) => p.id == kProMonthlyProductId);
       return product.price;
     } catch (e) {
-      return '£2.99';
+      return 'Price unavailable';
     }
   }
 
