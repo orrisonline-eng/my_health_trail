@@ -1,3 +1,4 @@
+// lib/main.dart
 /*
   MyHealthTrail
   --------------
@@ -87,7 +88,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ─────────────────────────  MODEL  ─────────────────────────
 class HealthEntry {
   final String id;
   final String dateTimeIso;
@@ -130,7 +130,504 @@ class HealthEntry {
       );
 }
 
-// ─────────────────────────  HOME PAGE  ─────────────────────────
+class EntryEditorPage extends StatefulWidget {
+  const EntryEditorPage({
+    super.key,
+    this.existing,
+    required this.formatDateOnly,
+  });
+
+  final HealthEntry? existing;
+  final String Function(DateTime?) formatDateOnly;
+
+  @override
+  State<EntryEditorPage> createState() => _EntryEditorPageState();
+}
+
+class _EntryEditorPageState extends State<EntryEditorPage> {
+  late final TextEditingController _sugarController;
+  late final TextEditingController _systolicController;
+  late final TextEditingController _diastolicController;
+  late final TextEditingController _weightController;
+  late final TextEditingController _notesController;
+
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    final existingDate = widget.existing?.dateTime ?? DateTime.now();
+
+    _selectedDate = DateTime(
+      existingDate.year,
+      existingDate.month,
+      existingDate.day,
+    );
+
+    _sugarController =
+        TextEditingController(text: widget.existing?.bloodSugar ?? '');
+    _systolicController =
+        TextEditingController(text: widget.existing?.systolic ?? '');
+    _diastolicController =
+        TextEditingController(text: widget.existing?.diastolic ?? '');
+    _weightController =
+        TextEditingController(text: widget.existing?.weight ?? '');
+    _notesController =
+        TextEditingController(text: widget.existing?.notes ?? '');
+  }
+
+  @override
+  void dispose() {
+    _sugarController.dispose();
+    _systolicController.dispose();
+    _diastolicController.dispose();
+    _weightController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now().add(const Duration(days: 3650)),
+    );
+
+    if (!mounted || picked == null) return;
+
+    setState(() {
+      _selectedDate = DateTime(picked.year, picked.month, picked.day);
+    });
+  }
+
+  void _save() {
+    if (_sugarController.text.trim().isEmpty &&
+        _systolicController.text.trim().isEmpty &&
+        _diastolicController.text.trim().isEmpty &&
+        _weightController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter at least one health reading'),
+        ),
+      );
+      return;
+    }
+
+    final baseTime = widget.existing?.dateTime ?? DateTime.now();
+    final entryDateTime = DateTime(
+      _selectedDate.year,
+      _selectedDate.month,
+      _selectedDate.day,
+      baseTime.hour,
+      baseTime.minute,
+      baseTime.second,
+      baseTime.millisecond,
+      baseTime.microsecond,
+    );
+
+    Navigator.of(context).pop(
+      HealthEntry(
+        id: widget.existing?.id ?? '${DateTime.now().millisecondsSinceEpoch}',
+        dateTimeIso: entryDateTime.toIso8601String(),
+        bloodSugar: _sugarController.text.trim(),
+        systolic: _systolicController.text.trim(),
+        diastolic: _diastolicController.text.trim(),
+        weight: _weightController.text.trim(),
+        notes: _notesController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isEditing = widget.existing != null;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(isEditing ? 'Edit Health Entry' : 'Add Health Entry'),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          InkWell(
+            onTap: _pickDate,
+            borderRadius: BorderRadius.circular(8),
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Entry date',
+                prefixIcon: Icon(Icons.calendar_today_outlined),
+                border: OutlineInputBorder(),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(widget.formatDateOnly(_selectedDate)),
+                  const Icon(Icons.edit_calendar_outlined, size: 18),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _sugarController,
+            decoration: const InputDecoration(
+              labelText: 'Blood sugar (mmol/L)',
+              hintText: 'e.g. 5.8',
+              border: OutlineInputBorder(),
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Blood Pressure (mmHg)',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.teal,
+              fontSize: 15,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _systolicController,
+                  decoration: const InputDecoration(
+                    labelText: 'Systolic',
+                    hintText: 'e.g. 120',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _diastolicController,
+                  decoration: const InputDecoration(
+                    labelText: 'Diastolic',
+                    hintText: 'e.g. 80',
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _weightController,
+            decoration: const InputDecoration(
+              labelText: 'Weight (kg)',
+              hintText: 'e.g. 78.4',
+              border: OutlineInputBorder(),
+            ),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _notesController,
+            decoration: const InputDecoration(
+              labelText: 'Notes (optional)',
+              hintText: 'e.g. fasting, after meal, exercise',
+              border: OutlineInputBorder(),
+            ),
+            minLines: 1,
+            maxLines: 4,
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: _save,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.teal,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(52),
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EntryListItem extends StatelessWidget {
+  const _EntryListItem({
+    required this.entry,
+    required this.formatDateOnly,
+    required this.formatTimeOnly,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final HealthEntry entry;
+  final String Function(DateTime?) formatDateOnly;
+  final String Function(DateTime?) formatTimeOnly;
+  final Future<void> Function(HealthEntry entry) onEdit;
+  final Future<void> Function(HealthEntry entry) onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = <String>[];
+
+    if (entry.bloodSugar.isNotEmpty) {
+      values.add('🩸 ${entry.bloodSugar} mmol/L');
+    }
+    if (entry.systolic.isNotEmpty && entry.diastolic.isNotEmpty) {
+      values.add('❤️ ${entry.systolic}/${entry.diastolic} mmHg');
+    }
+    if (entry.weight.isNotEmpty) {
+      values.add('⚖️ ${entry.weight} kg');
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 85,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  formatDateOnly(entry.dateTime),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  formatTimeOnly(entry.dateTime),
+                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (values.isNotEmpty)
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 4,
+                    children: values
+                        .map((v) => Text(v, style: const TextStyle(fontSize: 13)))
+                        .toList(),
+                  ),
+                if (entry.notes.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      entry.notes,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: Icon(Icons.edit_outlined, size: 20, color: Colors.grey[500]),
+            tooltip: 'Edit entry',
+            onPressed: () => onEdit(entry),
+          ),
+          IconButton(
+            icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey[400]),
+            tooltip: 'Delete entry',
+            onPressed: () => onDelete(entry),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class AllEntriesPage extends StatefulWidget {
+  const AllEntriesPage({
+    super.key,
+    required this.entries,
+    required this.formatDateOnly,
+    required this.formatTimeOnly,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  final List<HealthEntry> entries;
+  final String Function(DateTime?) formatDateOnly;
+  final String Function(DateTime?) formatTimeOnly;
+  final Future<HealthEntry?> Function(HealthEntry entry) onEdit;
+  final Future<bool> Function(HealthEntry entry) onDelete;
+
+  @override
+  State<AllEntriesPage> createState() => _AllEntriesPageState();
+}
+
+class _AllEntriesPageState extends State<AllEntriesPage> {
+  final TextEditingController _searchController = TextEditingController();
+  late List<HealthEntry> _entries;
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _entries = List<HealthEntry>.from(widget.entries);
+    _sortNewestFirst();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _sortNewestFirst() {
+    _entries.sort(
+      (a, b) => (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)),
+    );
+  }
+
+  List<HealthEntry> get _filteredEntries {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return _entries;
+
+    return _entries.where((entry) {
+      final date = widget.formatDateOnly(entry.dateTime).toLowerCase();
+      final time = widget.formatTimeOnly(entry.dateTime).toLowerCase();
+      final sugar = entry.bloodSugar.toLowerCase();
+      final bp = '${entry.systolic}/${entry.diastolic}'.toLowerCase();
+      final weight = entry.weight.toLowerCase();
+      final notes = entry.notes.toLowerCase();
+
+      return date.contains(q) ||
+          time.contains(q) ||
+          sugar.contains(q) ||
+          bp.contains(q) ||
+          weight.contains(q) ||
+          notes.contains(q);
+    }).toList();
+  }
+
+  Future<void> _handleEdit(HealthEntry entry) async {
+    final updated = await widget.onEdit(entry);
+    if (!mounted || updated == null) return;
+
+    setState(() {
+      final index = _entries.indexWhere((e) => e.id == entry.id);
+      if (index != -1) {
+        _entries[index] = updated;
+      }
+      _sortNewestFirst();
+    });
+  }
+
+  Future<void> _handleDelete(HealthEntry entry) async {
+    final deleted = await widget.onDelete(entry);
+    if (!mounted || !deleted) return;
+
+    setState(() {
+      _entries.removeWhere((e) => e.id == entry.id);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filteredEntries;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('All Entries'),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search entries',
+                hintText: 'Date, notes, sugar, blood pressure, weight...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _query = '');
+                        },
+                      ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                filled: true,
+                fillColor: Colors.grey[50],
+              ),
+              onChanged: (value) => setState(() => _query = value),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                '${filtered.length} of ${_entries.length} entries',
+                style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+              ),
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        _query.isEmpty
+                            ? 'No entries found.'
+                            : 'No entries match your search.',
+                        style: TextStyle(fontSize: 15, color: Colors.grey[600]),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final entry = filtered[index];
+                      return _EntryListItem(
+                        entry: entry,
+                        formatDateOnly: widget.formatDateOnly,
+                        formatTimeOnly: widget.formatTimeOnly,
+                        onEdit: _handleEdit,
+                        onDelete: _handleDelete,
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class MyHomePage extends StatefulWidget {
   const MyHomePage({super.key, required this.title});
   final String title;
@@ -156,9 +653,22 @@ class _MyHomePageState extends State<MyHomePage> {
   String? _appUserId;
   String? _iapError;
 
-  Future<void> _openTutorial() async {
-    final Uri uri = Uri.parse(AppLinks.healthTutorial);
+  @override
+  void initState() {
+    super.initState();
+    _initIapAndData();
+  }
 
+  @override
+  void dispose() {
+    ProIap.dispose();
+    _profileController.dispose();
+    _nhsController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _openTutorial() async {
+    final uri = Uri.parse(AppLinks.healthTutorial);
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       throw Exception('Could not launch tutorial');
     }
@@ -187,20 +697,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _initIapAndData();
-  }
-
-  @override
-  void dispose() {
-    ProIap.dispose();
-    _profileController.dispose();
-    _nhsController.dispose();
-    super.dispose();
-  }
-
   Future<void> _initIapAndData() async {
     await startTrialIfNeeded();
     await _loadOrCreateAppUserId();
@@ -219,8 +715,6 @@ class _MyHomePageState extends State<MyHomePage> {
     } catch (e) {
       _iapError = e.toString();
     }
-
-    // await _refreshProStatusFromBackend();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final prefs = await SharedPreferences.getInstance();
@@ -256,7 +750,6 @@ class _MyHomePageState extends State<MyHomePage> {
     if (_appUserId == null || _appUserId!.isEmpty) return;
 
     final uri = Uri.parse('$_supabaseUrl/functions/v1/get-entitlement');
-
     final response = await http.post(
       uri,
       headers: {
@@ -291,7 +784,6 @@ class _MyHomePageState extends State<MyHomePage> {
     if (_appUserId == null || _appUserId!.isEmpty) return;
 
     final uri = Uri.parse('$_supabaseUrl/functions/v1/verify-iap');
-
     final response = await http.post(
       uri,
       headers: {
@@ -432,10 +924,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 'Payment will be charged to your Google Play account at confirmation of purchase.\n'
                 'Subscription renews automatically unless cancelled at least 24 hours before the end of the current period.\n'
                 'You can manage or cancel your subscription in Google Play.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 12),
               _paywallLegalLinks(),
@@ -485,50 +974,72 @@ class _MyHomePageState extends State<MyHomePage> {
     return box.localToGlobal(Offset.zero) & box.size;
   }
 
-  // ── Persistence ──
   Future<void> _loadProfileData() async {
-    final p = await SharedPreferences.getInstance();
-    _profileController.text = p.getString(_profileKey) ?? '';
-    _nhsController.text = p.getString(_nhsKey) ?? '';
+    final prefs = await SharedPreferences.getInstance();
+    _profileController.text = prefs.getString(_profileKey) ?? '';
+    _nhsController.text = prefs.getString(_nhsKey) ?? '';
   }
 
-  Future<void> _saveProfileName(String v) async =>
-      (await SharedPreferences.getInstance()).setString(_profileKey, v);
+  Future<void> _saveProfileName(String value) async {
+    await (await SharedPreferences.getInstance()).setString(_profileKey, value);
+  }
 
-  Future<void> _saveNhsNumber(String v) async =>
-      (await SharedPreferences.getInstance()).setString(_nhsKey, v);
+  Future<void> _saveNhsNumber(String value) async {
+    await (await SharedPreferences.getInstance()).setString(_nhsKey, value);
+  }
 
   Future<void> _loadEntries() async {
-    final p = await SharedPreferences.getInstance();
-    final list = p.getStringList(_entriesKey) ?? [];
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_entriesKey) ?? [];
+
     setState(() {
       _entries
         ..clear()
-        ..addAll(list
-            .map((s) =>
-                HealthEntry.fromMap(Map<String, dynamic>.from(jsonDecode(s))))
-            .toList());
+        ..addAll(
+          list
+              .map(
+                (s) => HealthEntry.fromMap(
+                  Map<String, dynamic>.from(jsonDecode(s)),
+                ),
+              )
+              .toList(),
+        );
       _sortNewestFirst();
     });
   }
 
-  Future<void> _saveEntries() async =>
-      (await SharedPreferences.getInstance()).setStringList(
-          _entriesKey, _entries.map((e) => jsonEncode(e.toMap())).toList());
-
-  void _sortNewestFirst() {
-    _entries.sort((a, b) =>
-        (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)));
+  Future<void> _saveEntries() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _entriesKey,
+      _entries.map((e) => jsonEncode(e.toMap())).toList(),
+    );
   }
 
-  // ─────────────────────────  ADD ENTRY  ─────────────────────────
+  void _sortNewestFirst() {
+    _entries.sort(
+      (a, b) => (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)),
+    );
+  }
+
+  Future<HealthEntry?> _openEntryEditor({HealthEntry? existing}) {
+    return Navigator.of(context).push<HealthEntry>(
+      MaterialPageRoute(
+        builder: (_) => EntryEditorPage(
+          existing: existing,
+          formatDateOnly: _formatDateOnly,
+        ),
+      ),
+    );
+  }
+
   Future<void> _addEntry() async {
     if (!await _hasActiveAccess()) {
       _showTrialExpiredDialog();
       return;
     }
 
-    final entry = await _showEntryDialog();
+    final entry = await _openEntryEditor();
     if (entry == null) return;
 
     setState(() {
@@ -540,134 +1051,58 @@ class _MyHomePageState extends State<MyHomePage> {
     await _exportToCSV();
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('Health entry saved.')));
-  }
-
-  Future<HealthEntry?> _showEntryDialog({HealthEntry? existing}) async {
-    final sugar = TextEditingController(text: existing?.bloodSugar ?? '');
-    final sys = TextEditingController(text: existing?.systolic ?? '');
-    final dia = TextEditingController(text: existing?.diastolic ?? '');
-    final weight = TextEditingController(text: existing?.weight ?? '');
-    final notes = TextEditingController(text: existing?.notes ?? '');
-
-    return showDialog<HealthEntry>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Add Health Entry'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: sugar,
-                decoration: const InputDecoration(
-                  labelText: 'Blood sugar (mmol/L)',
-                  hintText: 'e.g. 5.8',
-                ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: 12),
-              const Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Blood Pressure (mmHg)',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Colors.teal,
-                    fontSize: 15,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: sys,
-                      decoration: const InputDecoration(
-                        labelText: 'Systolic',
-                        hintText: 'e.g. 120',
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: dia,
-                      decoration: const InputDecoration(
-                        labelText: 'Diastolic',
-                        hintText: 'e.g. 80',
-                      ),
-                      keyboardType: TextInputType.number,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: weight,
-                decoration: const InputDecoration(
-                  labelText: 'Weight (kg)',
-                  hintText: 'e.g. 78.4',
-                ),
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: notes,
-                decoration: const InputDecoration(
-                  labelText: 'Notes (optional)',
-                  hintText: 'e.g. fasting, after meal, exercise',
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (sugar.text.trim().isEmpty &&
-                  sys.text.trim().isEmpty &&
-                  dia.text.trim().isEmpty &&
-                  weight.text.trim().isEmpty) {
-                ScaffoldMessenger.of(dialogContext).showSnackBar(
-                  const SnackBar(
-                    content: Text('Please enter at least one health reading'),
-                  ),
-                );
-                return;
-              }
-
-              final now = DateTime.now();
-              Navigator.pop(
-                dialogContext,
-                HealthEntry(
-                  id: existing?.id ?? '${now.millisecondsSinceEpoch}',
-                  dateTimeIso: now.toIso8601String(),
-                  bloodSugar: sugar.text.trim(),
-                  systolic: sys.text.trim(),
-                  diastolic: dia.text.trim(),
-                  weight: weight.text.trim(),
-                  notes: notes.text.trim(),
-                ),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Health entry saved.')),
     );
   }
 
-  // ─────────────────────────  CSV EXPORT  ─────────────────────────
+  Future<HealthEntry?> _editEntry(HealthEntry existing) async {
+    if (!await _hasActiveAccess()) {
+      _showTrialExpiredDialog();
+      return null;
+    }
+
+    final updated = await _openEntryEditor(existing: existing);
+    if (updated == null) return null;
+
+    setState(() {
+      final index = _entries.indexWhere((e) => e.id == existing.id);
+      if (index != -1) {
+        _entries[index] = updated;
+      }
+      _sortNewestFirst();
+    });
+
+    await _saveEntries();
+    await _exportToCSV();
+
+    if (!mounted) return updated;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Health entry updated.')),
+    );
+
+    return updated;
+  }
+
+  Future<void> _openAllEntriesPage() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AllEntriesPage(
+          entries: List<HealthEntry>.from(_entries),
+          formatDateOnly: _formatDateOnly,
+          formatTimeOnly: _formatTimeOnly,
+          onEdit: _editEntry,
+          onDelete: _deleteEntry,
+        ),
+      ),
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   Future<void> _exportToCSV() async {
     final rows = [
       [
@@ -678,7 +1113,7 @@ class _MyHomePageState extends State<MyHomePage> {
         'Systolic(mmHg)',
         'Diastolic(mmHg)',
         'Weight(kg)',
-        'Notes'
+        'Notes',
       ],
       ..._entries.map((e) => [
             _profileController.text,
@@ -688,9 +1123,10 @@ class _MyHomePageState extends State<MyHomePage> {
             e.systolic,
             e.diastolic,
             e.weight,
-            e.notes
-          ])
+            e.notes,
+          ]),
     ];
+
     final csv = const ListToCsvConverter().convert(rows);
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/myhealthtrail_readings.csv');
@@ -705,7 +1141,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
     final dir = await getApplicationDocumentsDirectory();
     final file = File('${dir.path}/myhealthtrail_readings.csv');
-    if (!await file.exists()) await _exportToCSV();
+    if (!await file.exists()) {
+      await _exportToCSV();
+    }
+
     await Share.shareXFiles(
       [XFile(file.path)],
       sharePositionOrigin: _shareOrigin(),
@@ -713,15 +1152,17 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  // ─────────────────────────  PDF EXPORT  ─────────────────────────
   List<HealthEntry> _entriesInLast3Months() {
     final now = DateTime.now();
     final start = DateTime(now.year, now.month - 2, 1);
+
     return _entries
-        .where((e) =>
-            e.dateTime != null &&
-            !e.dateTime!.isBefore(start) &&
-            !e.dateTime!.isAfter(now))
+        .where(
+          (e) =>
+              e.dateTime != null &&
+              !e.dateTime!.isBefore(start) &&
+              !e.dateTime!.isAfter(now),
+        )
         .toList();
   }
 
@@ -733,8 +1174,11 @@ class _MyHomePageState extends State<MyHomePage> {
 
     final items = _entriesInLast3Months();
     if (items.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No health entries found in the last 3 months.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No health entries found in the last 3 months.'),
+        ),
+      );
       return;
     }
 
@@ -748,7 +1192,8 @@ class _MyHomePageState extends State<MyHomePage> {
       final pdf = _buildHealthReportPdf(items);
       final dir = await getApplicationDocumentsDirectory();
       final file = File(
-          '${dir.path}/myhealthtrail_report_${DateTime.now().millisecondsSinceEpoch}.pdf');
+        '${dir.path}/myhealthtrail_report_${DateTime.now().millisecondsSinceEpoch}.pdf',
+      );
       await file.writeAsBytes(await pdf.save());
 
       if (!mounted) return;
@@ -789,8 +1234,7 @@ class _MyHomePageState extends State<MyHomePage> {
             _buildBloodSugarTable(items),
             pw.SizedBox(height: 20),
           ],
-          if (items
-              .any((e) => e.systolic.isNotEmpty || e.diastolic.isNotEmpty)) ...[
+          if (items.any((e) => e.systolic.isNotEmpty || e.diastolic.isNotEmpty)) ...[
             _buildSectionTitle('Blood Pressure Readings', PdfColors.blue),
             _buildBloodPressureTable(items),
             pw.SizedBox(height: 20),
@@ -808,14 +1252,17 @@ class _MyHomePageState extends State<MyHomePage> {
     return doc;
   }
 
-  // ─────────────────────────  PDF COMPONENTS  ─────────────────────────
   pw.Widget _buildPdfHeader(
-      String profileName, String nhsNumber, DateTime now) {
+    String profileName,
+    String nhsNumber,
+    DateTime now,
+  ) {
     return pw.Container(
       padding: const pw.EdgeInsets.only(bottom: 20),
       decoration: const pw.BoxDecoration(
-        border:
-            pw.Border(bottom: pw.BorderSide(color: PdfColors.teal, width: 2)),
+        border: pw.Border(
+          bottom: pw.BorderSide(color: PdfColors.teal, width: 2),
+        ),
       ),
       child: pw.Column(
         crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -832,8 +1279,10 @@ class _MyHomePageState extends State<MyHomePage> {
                 ),
               ),
               pw.Container(
-                padding:
-                    const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: pw.BoxDecoration(
                   color: PdfColors.teal50,
                   borderRadius: pw.BorderRadius.circular(4),
@@ -860,7 +1309,9 @@ class _MyHomePageState extends State<MyHomePage> {
                     pw.Text(
                       'Name: $profileName',
                       style: pw.TextStyle(
-                          fontSize: 12, fontWeight: pw.FontWeight.bold),
+                        fontSize: 12,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
                     ),
                   if (nhsNumber.isNotEmpty)
                     pw.Text(
@@ -936,16 +1387,23 @@ class _MyHomePageState extends State<MyHomePage> {
             children: [
               _buildStatBox('Total Entries', '$totalEntries', PdfColors.teal),
               if (stats['avgBloodSugar'] != null)
-                _buildStatBox('Avg Blood Sugar',
-                    '${stats['avgBloodSugar']} mmol/L', PdfColors.red),
+                _buildStatBox(
+                  'Avg Blood Sugar',
+                  '${stats['avgBloodSugar']} mmol/L',
+                  PdfColors.red,
+                ),
               if (stats['avgSystolic'] != null && stats['avgDiastolic'] != null)
                 _buildStatBox(
-                    'Avg BP',
-                    '${stats['avgSystolic']}/${stats['avgDiastolic']} mmHg',
-                    PdfColors.blue),
+                  'Avg BP',
+                  '${stats['avgSystolic']}/${stats['avgDiastolic']} mmHg',
+                  PdfColors.blue,
+                ),
               if (stats['avgWeight'] != null)
                 _buildStatBox(
-                    'Avg Weight', '${stats['avgWeight']} kg', PdfColors.green),
+                  'Avg Weight',
+                  '${stats['avgWeight']} kg',
+                  PdfColors.green,
+                ),
             ],
           ),
         ],
@@ -1071,7 +1529,7 @@ class _MyHomePageState extends State<MyHomePage> {
               _tableCell(_formatTimeOnly(e.dateTime)),
               _tableCell('${e.systolic}/${e.diastolic}'),
               _statusCell(status),
-              _tableCell(''),
+              _tableCell(e.notes),
             ],
           );
         }),
@@ -1100,14 +1558,16 @@ class _MyHomePageState extends State<MyHomePage> {
             _tableHeader('Notes'),
           ],
         ),
-        ...filtered.map((e) => pw.TableRow(
-              children: [
-                _tableCell(_formatDateOnly(e.dateTime)),
-                _tableCell(_formatTimeOnly(e.dateTime)),
-                _tableCell(e.weight),
-                _tableCell(''),
-              ],
-            )),
+        ...filtered.map(
+          (e) => pw.TableRow(
+            children: [
+              _tableCell(_formatDateOnly(e.dateTime)),
+              _tableCell(_formatTimeOnly(e.dateTime)),
+              _tableCell(e.weight),
+              _tableCell(e.notes),
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -1207,7 +1667,7 @@ class _MyHomePageState extends State<MyHomePage> {
           pw.Text(
             'Reference Ranges:\n'
             '• Blood Sugar: Normal 4.0-7.0 mmol/L | High >7.0 | Low <4.0\n'
-            '• Blood Pressure: Normal <120/80 mmHg | Elevated 120-129 | High ≥130/80',
+            '• Blood Pressure: Normal below 120/80 mmHg | Elevated 120-129 | High 130/80 or above',
             style: pw.TextStyle(fontSize: 8, color: PdfColors.grey600),
           ),
         ],
@@ -1215,7 +1675,6 @@ class _MyHomePageState extends State<MyHomePage> {
     );
   }
 
-  // ─────────────────────────  HELPER METHODS  ─────────────────────────
   Map<String, dynamic> _calculateStats(List<HealthEntry> items) {
     final stats = <String, dynamic>{};
 
@@ -1281,13 +1740,14 @@ class _MyHomePageState extends State<MyHomePage> {
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
   String _formatDateOnly(DateTime? date) {
     if (date == null) return '-';
+
     const months = [
       'Jan',
       'Feb',
@@ -1300,8 +1760,9 @@ class _MyHomePageState extends State<MyHomePage> {
       'Sep',
       'Oct',
       'Nov',
-      'Dec'
+      'Dec',
     ];
+
     return '${date.day} ${months[date.month - 1]} ${date.year}';
   }
 
@@ -1313,10 +1774,10 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   String _getBloodSugarStatus(String value) {
-    final v = double.tryParse(value);
-    if (v == null) return '-';
-    if (v < 4.0) return 'Low';
-    if (v > 7.0) return 'High';
+    final parsed = double.tryParse(value);
+    if (parsed == null) return '-';
+    if (parsed < 4.0) return 'Low';
+    if (parsed > 7.0) return 'High';
     return 'Normal';
   }
 
@@ -1331,14 +1792,14 @@ class _MyHomePageState extends State<MyHomePage> {
     return 'Normal';
   }
 
-  // ─────────────────────────  CLEAR ALL  ─────────────────────────
   Future<void> _confirmAndClearAll() async {
     final ok = await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Delete all entries?'),
             content: const Text(
-                'These entries will be permanently deleted from this device.\n\nPlease export your data first if needed.'),
+              'These entries will be permanently deleted from this device.\n\nPlease export your data first if needed.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -1358,104 +1819,14 @@ class _MyHomePageState extends State<MyHomePage> {
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_entriesKey);
-    setState(() => _entries.clear());
+
+    setState(() {
+      _entries.clear();
+    });
 
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('All entries deleted.')));
-  }
-
-  // ─────────────────────────  UI BUILD  ─────────────────────────
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.teal,
-        foregroundColor: Colors.white,
-        title: Text(widget.title),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.play_circle_outline, color: Colors.white),
-            tooltip: 'Watch Tutorial',
-            onPressed: _openTutorial,
-          ),
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            onPressed: _showAboutDialog,
-            tooltip: 'About',
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          FutureBuilder<int>(
-            future: trialDaysLeft(),
-            builder: (context, snapshot) {
-              final days = snapshot.data ?? trialDays;
-              if (!ProIap.isPro && days > 0) {
-                return Container(
-                  width: double.infinity,
-                  margin:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.shade100,
-                    border: Border(
-                      bottom: BorderSide(color: Colors.orange.shade300),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.timer, color: Colors.orange),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Free trial: $days day(s) left',
-                          style: TextStyle(
-                            color: Colors.orange.shade900,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => _showUpgrade(
-                          'Your free trial is active.\n\nUpgrade to Pro now for uninterrupted access after your 7-day trial ends.',
-                        ),
-                        child: const Text('Upgrade'),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              return const SizedBox.shrink();
-            },
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildProfileSection(),
-                  const SizedBox(height: 24),
-                  _buildFeaturesSection(),
-                  const SizedBox(height: 24),
-                  _buildActionsSection(),
-                  const SizedBox(height: 24),
-                  if (_entries.isNotEmpty) ...[
-                    _buildRecentEntriesSection(),
-                    const SizedBox(height: 24),
-                  ],
-                  _buildFooter(),
-                ],
-              ),
-            ),
-          ),
-          const LegalFooter(),
-        ],
-      ),
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('All entries deleted.')),
     );
   }
 
@@ -1532,17 +1903,35 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             const SizedBox(height: 12),
             _buildFeatureRow(
-                Icons.water_drop, 'Track blood sugar (mmol/L)', Colors.red),
+              Icons.water_drop,
+              'Track blood sugar (mmol/L)',
+              Colors.red,
+            ),
             _buildFeatureRow(
-                Icons.favorite, 'Track blood pressure (mmHg)', Colors.blue),
+              Icons.favorite,
+              'Track blood pressure (mmHg)',
+              Colors.blue,
+            ),
             _buildFeatureRow(
-                Icons.monitor_weight, 'Track weight (kg)', Colors.green),
+              Icons.monitor_weight,
+              'Track weight (kg)',
+              Colors.green,
+            ),
             _buildFeatureRow(
-                Icons.table_chart, 'CSV export + sharing', Colors.orange),
-            _buildFeatureRow(Icons.picture_as_pdf, '3-month PDF health report',
-                Colors.indigo),
+              Icons.table_chart,
+              'CSV export + sharing',
+              Colors.orange,
+            ),
             _buildFeatureRow(
-                Icons.lock, 'Secure local storage on device', Colors.teal),
+              Icons.picture_as_pdf,
+              '3-month PDF health report',
+              Colors.indigo,
+            ),
+            _buildFeatureRow(
+              Icons.lock,
+              'Secure local storage on device',
+              Colors.teal,
+            ),
           ],
         ),
       ),
@@ -1581,22 +1970,42 @@ class _MyHomePageState extends State<MyHomePage> {
         ),
         const SizedBox(height: 16),
         _buildActionButton(
-            Colors.teal, Icons.add, 'Add Health Entry', _addEntry),
+          Colors.teal,
+          Icons.add,
+          'Add Health Entry',
+          _addEntry,
+        ),
         const SizedBox(height: 12),
         _buildActionButton(
-            Colors.green, Icons.table_chart, 'Share CSV File', _shareCSV),
+          Colors.green,
+          Icons.table_chart,
+          'Share CSV File',
+          _shareCSV,
+        ),
         const SizedBox(height: 12),
-        _buildActionButton(Colors.indigo, Icons.picture_as_pdf,
-            'Export 3-Month PDF Report', _export3MonthReportPdf),
+        _buildActionButton(
+          Colors.indigo,
+          Icons.picture_as_pdf,
+          'Export 3-Month PDF Report',
+          _export3MonthReportPdf,
+        ),
         const SizedBox(height: 12),
-        _buildActionButton(Colors.red, Icons.delete_forever,
-            'Clear All Entries', _confirmAndClearAll),
+        _buildActionButton(
+          Colors.red,
+          Icons.delete_forever,
+          'Clear All Entries',
+          _confirmAndClearAll,
+        ),
       ],
     );
   }
 
   Widget _buildActionButton(
-      Color color, IconData icon, String label, VoidCallback onPressed) {
+    Color color,
+    IconData icon,
+    String label,
+    VoidCallback onPressed,
+  ) {
     return SizedBox(
       width: double.infinity,
       height: 56,
@@ -1637,15 +2046,24 @@ class _MyHomePageState extends State<MyHomePage> {
                     color: Colors.teal,
                   ),
                 ),
-                Text(
-                  '${_entries.length} total',
-                  style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                Row(
+                  children: [
+                    Text(
+                      '${_entries.length} total',
+                      style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: _openAllEntriesPage,
+                      child: const Text('View all'),
+                    ),
+                  ],
                 ),
               ],
             ),
             const SizedBox(height: 12),
             const Divider(),
-            ...recentEntries.map((entry) => _buildEntryTile(entry)),
+            ...recentEntries.map(_buildEntryTile),
           ],
         ),
       ),
@@ -1653,86 +2071,25 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Widget _buildEntryTile(HealthEntry entry) {
-    final values = <String>[];
-    if (entry.bloodSugar.isNotEmpty) {
-      values.add('🩸 ${entry.bloodSugar} mmol/L');
-    }
-    if (entry.systolic.isNotEmpty && entry.diastolic.isNotEmpty) {
-      values.add('❤️ ${entry.systolic}/${entry.diastolic} mmHg');
-    }
-    if (entry.weight.isNotEmpty) {
-      values.add('⚖️ ${entry.weight} kg');
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
-        border: Border(bottom: BorderSide(color: Colors.grey[200]!)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 85,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _formatDateOnly(entry.dateTime),
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-                Text(
-                  _formatTimeOnly(entry.dateTime),
-                  style: TextStyle(fontSize: 11, color: Colors.grey[600]),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 4,
-                  children: values
-                      .map((v) => Text(v, style: const TextStyle(fontSize: 13)))
-                      .toList(),
-                ),
-                if (entry.notes.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Text(
-                      entry.notes,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[600],
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: Icon(Icons.delete_outline, size: 20, color: Colors.grey[400]),
-            onPressed: () => _deleteEntry(entry),
-            tooltip: 'Delete entry',
-          ),
-        ],
-      ),
+    return _EntryListItem(
+      entry: entry,
+      formatDateOnly: _formatDateOnly,
+      formatTimeOnly: _formatTimeOnly,
+      onEdit: (item) async {
+        await _editEntry(item);
+      },
+      onDelete: (item) async {
+        await _deleteEntry(item);
+      },
     );
   }
 
-  Future<void> _deleteEntry(HealthEntry entry) async {
+  Future<bool> _deleteEntry(HealthEntry entry) async {
     final ok = await showDialog<bool>(
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Delete entry?'),
-            content:
-                Text('Delete entry from ${_formatDateOnly(entry.dateTime)}?'),
+            content: Text('Delete entry from ${_formatDateOnly(entry.dateTime)}?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -1748,18 +2105,21 @@ class _MyHomePageState extends State<MyHomePage> {
         ) ??
         false;
 
-    if (!ok) return;
+    if (!ok) return false;
 
     setState(() {
       _entries.removeWhere((e) => e.id == entry.id);
     });
+
     await _saveEntries();
     await _exportToCSV();
 
-    if (!mounted) return;
+    if (!mounted) return true;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Entry deleted.')),
     );
+
+    return true;
   }
 
   Widget _buildFooter() {
@@ -1790,7 +2150,10 @@ class _MyHomePageState extends State<MyHomePage> {
             onPressed: () => _showUpgrade(
               'Upgrade to Pro to continue using MyHealthTrail after your 7-day free trial.',
             ),
-            child: const Text('Upgrade to Pro', style: TextStyle(fontSize: 13)),
+            child: const Text(
+              'Upgrade to Pro',
+              style: TextStyle(fontSize: 13),
+            ),
           ),
         const SizedBox(height: 8),
         Text(
@@ -1818,8 +2181,10 @@ class _MyHomePageState extends State<MyHomePage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Version 1.0.0',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Version 1.0.0',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               SizedBox(height: 12),
               Text(
                 'Track your blood sugar, blood pressure, and weight easily. '
@@ -1834,7 +2199,9 @@ class _MyHomePageState extends State<MyHomePage> {
               Text(
                 '⚠️ Medical Disclaimer',
                 style: TextStyle(
-                    fontWeight: FontWeight.bold, color: Colors.orange),
+                  fontWeight: FontWeight.bold,
+                  color: Colors.orange,
+                ),
               ),
               SizedBox(height: 4),
               Text(
@@ -1873,8 +2240,10 @@ class _MyHomePageState extends State<MyHomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Data Collection',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Data Collection',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               SizedBox(height: 4),
               Text(
                 '• Health data (blood sugar, blood pressure, weight)\n'
@@ -1883,8 +2252,10 @@ class _MyHomePageState extends State<MyHomePage> {
                 style: TextStyle(fontSize: 13),
               ),
               SizedBox(height: 12),
-              Text('Data Storage',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Data Storage',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               SizedBox(height: 4),
               Text(
                 'All health data is stored locally on your device. '
@@ -1893,8 +2264,10 @@ class _MyHomePageState extends State<MyHomePage> {
                 style: TextStyle(fontSize: 13),
               ),
               SizedBox(height: 12),
-              Text('Data Sharing',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Data Sharing',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               SizedBox(height: 4),
               Text(
                 'We do NOT share your data with any third parties. '
@@ -1903,8 +2276,10 @@ class _MyHomePageState extends State<MyHomePage> {
                 style: TextStyle(fontSize: 13),
               ),
               SizedBox(height: 12),
-              Text('Data Deletion',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Data Deletion',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
               SizedBox(height: 4),
               Text(
                 'You can delete individual entries or all data at any time '
@@ -1919,6 +2294,103 @@ class _MyHomePageState extends State<MyHomePage> {
             onPressed: () => Navigator.pop(context),
             child: const Text('Close'),
           ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+        title: Text(widget.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.play_circle_outline, color: Colors.white),
+            tooltip: 'Watch Tutorial',
+            onPressed: _openTutorial,
+          ),
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            onPressed: _showAboutDialog,
+            tooltip: 'About',
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          FutureBuilder<int>(
+            future: trialDaysLeft(),
+            builder: (context, snapshot) {
+              final days = snapshot.data ?? trialDays;
+              if (!ProIap.isPro && days > 0) {
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 12,
+                    horizontal: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade100,
+                    border: Border(
+                      bottom: BorderSide(color: Colors.orange.shade300),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.timer, color: Colors.orange),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Free trial: $days day(s) left',
+                          style: TextStyle(
+                            color: Colors.orange.shade900,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: () => _showUpgrade(
+                          'Your free trial is active.\n\nUpgrade to Pro now for uninterrupted access after your 7-day trial ends.',
+                        ),
+                        child: const Text('Upgrade'),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _buildProfileSection(),
+                  const SizedBox(height: 24),
+                  _buildFeaturesSection(),
+                  const SizedBox(height: 24),
+                  _buildActionsSection(),
+                  const SizedBox(height: 24),
+                  if (_entries.isNotEmpty) ...[
+                    _buildRecentEntriesSection(),
+                    const SizedBox(height: 24),
+                  ],
+                  _buildFooter(),
+                ],
+              ),
+            ),
+          ),
+          const LegalFooter(),
         ],
       ),
     );
