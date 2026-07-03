@@ -420,7 +420,8 @@ class _EntryListItem extends StatelessWidget {
                     spacing: 12,
                     runSpacing: 4,
                     children: values
-                        .map((v) => Text(v, style: const TextStyle(fontSize: 13)))
+                        .map((v) =>
+                            Text(v, style: const TextStyle(fontSize: 13)))
                         .toList(),
                   ),
                 if (entry.notes.isNotEmpty)
@@ -494,7 +495,8 @@ class _AllEntriesPageState extends State<AllEntriesPage> {
 
   void _sortNewestFirst() {
     _entries.sort(
-      (a, b) => (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)),
+      (a, b) =>
+          (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)),
     );
   }
 
@@ -824,14 +826,6 @@ class _MyHomePageState extends State<MyHomePage> {
     return isTrialActive();
   }
 
-  String _proPriceText() {
-    final product = ProIap.cachedProduct;
-    if (product != null) {
-      return '${product.price} per month';
-    }
-    return 'the monthly price shown by Google Play';
-  }
-
   void _showTrialInfoDialog() async {
     final daysLeft = await trialDaysLeft();
     if (!mounted) return;
@@ -841,10 +835,10 @@ class _MyHomePageState extends State<MyHomePage> {
       builder: (_) => AlertDialog(
         title: const Text('Free Trial'),
         content: Text(
-          'You are on a free 7-day trial.\n'
+          'You are currently on a 7-day free trial.\n'
           'You have $daysLeft day(s) left.\n\n'
-          'MyHealthTrail Pro costs ${_proPriceText()}.\n\n'
-          'Upgrade to Pro for uninterrupted access after your trial ends.',
+          'After the trial, MyHealthTrail Pro costs ${ProIap.cachedProduct?.price ?? 'the price shown in Google Play'} and renews automatically.\n'
+          'Cancel anytime in Google Play under Subscriptions.',
         ),
         actions: [
           TextButton(
@@ -862,10 +856,13 @@ class _MyHomePageState extends State<MyHomePage> {
             onPressed: () {
               Navigator.pop(context);
               _showUpgrade(
-                'Your free trial is active.\n\nUpgrade to Pro now for uninterrupted access after your 7-day trial ends.',
+                'Start your 7-day free trial.\n\n'
+                'Then ${ProIap.cachedProduct?.price ?? 'the price shown in Google Play'}/month, auto-renewing every month unless cancelled.\n\n'
+                'Cancel anytime in Google Play under Subscriptions.\n\n'
+                'You will not be charged until the free trial ends.',
               );
             },
-            child: const Text('Upgrade to Pro'),
+            child: const Text('Start free trial'),
           ),
         ],
       ),
@@ -877,8 +874,10 @@ class _MyHomePageState extends State<MyHomePage> {
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Trial Expired'),
-        content: const Text(
-          'Your free 7-day trial has ended.\n\nUpgrade to Pro to continue using MyHealthTrail.',
+        content: Text(
+          'Your free trial has ended.\n\n'
+          'Subscribe for ${ProIap.cachedProduct?.price ?? 'the price shown in Google Play'}/month, auto-renewing every month unless cancelled.\n\n'
+          'Cancel anytime in Google Play under Subscriptions.',
         ),
         actions: [
           TextButton(
@@ -892,10 +891,12 @@ class _MyHomePageState extends State<MyHomePage> {
             onPressed: () {
               Navigator.pop(context);
               _showUpgrade(
-                'Your free 7-day trial has ended.\n\nUpgrade to Pro to continue using MyHealthTrail.',
+                'Your free trial has ended.\n\n'
+                'Subscribe for ${ProIap.cachedProduct?.price ?? 'the price shown in Google Play'}/month, auto-renewing every month unless cancelled.\n\n'
+                'Cancel anytime in Google Play under Subscriptions.',
               );
             },
-            child: const Text('Upgrade to Pro'),
+            child: const Text('Subscribe now'),
           ),
         ],
       ),
@@ -906,7 +907,7 @@ class _MyHomePageState extends State<MyHomePage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Upgrade to Pro'),
+        title: const Text('Start free trial'),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -915,15 +916,18 @@ class _MyHomePageState extends State<MyHomePage> {
               Text(msg),
               const SizedBox(height: 16),
               Text(
-                'MyHealthTrail Pro • ${_proPriceText()}',
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                'MyHealthTrail Pro • ${ProIap.cachedProduct?.price ?? "the price shown in Google Play"}/month',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 8),
-              const Text(
-                'Auto-renewable subscription.\n'
-                'Payment will be charged to your Google Play account at confirmation of purchase.\n'
-                'Subscription renews automatically unless cancelled at least 24 hours before the end of the current period.\n'
-                'You can manage or cancel your subscription in Google Play.',
+              Text(
+                'Auto-renewing subscription.\n'
+                'Includes a 7-day free trial.\n'
+                'After the trial, you will be charged ${ProIap.cachedProduct?.price ?? "the price shown in Google Play"}/month unless you cancel before the trial ends.\n'
+                'Your subscription renews automatically every month until cancelled.\n'
+                'Cancel anytime in Google Play under Subscriptions.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 12),
@@ -962,7 +966,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 );
               }
             },
-            child: const Text('Buy Pro'),
+            child: const Text('Start free trial'),
           ),
         ],
       ),
@@ -1018,7 +1022,8 @@ class _MyHomePageState extends State<MyHomePage> {
 
   void _sortNewestFirst() {
     _entries.sort(
-      (a, b) => (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)),
+      (a, b) =>
+          (b.dateTime ?? DateTime(0)).compareTo(a.dateTime ?? DateTime(0)),
     );
   }
 
@@ -1234,7 +1239,8 @@ class _MyHomePageState extends State<MyHomePage> {
             _buildBloodSugarTable(items),
             pw.SizedBox(height: 20),
           ],
-          if (items.any((e) => e.systolic.isNotEmpty || e.diastolic.isNotEmpty)) ...[
+          if (items
+              .any((e) => e.systolic.isNotEmpty || e.diastolic.isNotEmpty)) ...[
             _buildSectionTitle('Blood Pressure Readings', PdfColors.blue),
             _buildBloodPressureTable(items),
             pw.SizedBox(height: 20),
@@ -2089,7 +2095,8 @@ class _MyHomePageState extends State<MyHomePage> {
           context: context,
           builder: (_) => AlertDialog(
             title: const Text('Delete entry?'),
-            content: Text('Delete entry from ${_formatDateOnly(entry.dateTime)}?'),
+            content:
+                Text('Delete entry from ${_formatDateOnly(entry.dateTime)}?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
@@ -2122,48 +2129,50 @@ class _MyHomePageState extends State<MyHomePage> {
     return true;
   }
 
-  Widget _buildFooter() {
-    return Column(
-      children: [
-        const Divider(),
-        const SizedBox(height: 8),
-        FutureBuilder<int>(
-          future: trialDaysLeft(),
-          builder: (context, snapshot) {
-            final days = snapshot.data ?? trialDays;
-            final text = ProIap.isPro
-                ? 'Pro active'
-                : days > 0
-                    ? 'Free trial: $days day(s) left'
-                    : 'Trial ended. Upgrade to Pro to continue using MyHealthTrail.';
+ Widget _buildFooter() {
+  final priceText =
+      ProIap.cachedProduct?.price ?? 'the price shown in Google Play';
 
-            return Text(
-              text,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              textAlign: TextAlign.center,
-            );
-          },
-        ),
-        const SizedBox(height: 4),
-        if (!ProIap.isPro)
-          TextButton(
-            onPressed: () => _showUpgrade(
-              'Upgrade to Pro to continue using MyHealthTrail after your 7-day free trial.',
-            ),
-            child: const Text(
-              'Upgrade to Pro',
-              style: TextStyle(fontSize: 13),
-            ),
+  return Column(
+    children: [
+      const Divider(),
+      const SizedBox(height: 8),
+      FutureBuilder<int>(
+        future: trialDaysLeft(),
+        builder: (context, snapshot) {
+          final days = snapshot.data ?? trialDays;
+
+          final text = ProIap.isPro
+              ? 'Pro active'
+              : days > 0
+                  ? 'Free trial active: $days day(s) remaining. Then $priceText/month until cancelled.'
+                  : 'Trial ended. Subscribe for $priceText/month, auto-renewing unless cancelled.';
+
+          return Text(
+            text,
+            style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          );
+        },
+      ),
+      const SizedBox(height: 4),
+      if (!ProIap.isPro)
+        TextButton(
+          onPressed: () => _showUpgrade(
+            'Start your 7-day free trial.\n\n'
+            'Then $priceText/month, auto-renewing every month unless cancelled.\n\n'
+            'Cancel anytime in Google Play under Subscriptions.\n\n'
+            'You will not be charged until the free trial ends.',
           ),
-        const SizedBox(height: 8),
-        Text(
-          'Your data is stored securely on this device only.',
-          style: TextStyle(fontSize: 11, color: Colors.grey[500]),
-          textAlign: TextAlign.center,
+          child: const Text(
+            'Start free trial',
+            style: TextStyle(fontSize: 13),
+          ),
         ),
-      ],
-    );
-  }
+      const SizedBox(height: 8),
+    ],
+  );
+}
 
   void _showAboutDialog() {
     showDialog(
