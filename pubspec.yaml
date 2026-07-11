@@ -3,7 +3,7 @@ description: Track your blood sugar, blood pressure, and weight.
 
 publish_to: 'none'
 
-version: 1.0.5+15
+version: 1.0.8+20
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
